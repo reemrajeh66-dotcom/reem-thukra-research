@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>مقياس النظافة - النسخة البحثية الشاملة</title>
+    <style>
+        :root { --bg: #f8fafc; --primary: #0284c7; --secondary: #38bdf8; --success: #10b981; }
+        body { font-family: 'Cairo', sans-serif; background: var(--bg); margin: 0; overflow: hidden; touch-action: none; }
+        #app-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; }
+        .card { background: white; border: 8px solid var(--primary); border-radius: 40px; padding: 25px; width: 85%; max-width: 600px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.1); position: relative; z-index: 10; }
+        
+        #progress-container { width: 80%; height: 20px; background: #e2e8f0; border-radius: 10px; margin: 10px auto; overflow: hidden; display: none; border: 2px solid #cbd5e1; }
+        #progress-bar { width: 0%; height: 100%; background: var(--success); transition: width 0.3s ease; }
+
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
+        .item { font-size: 70px; background: #fff; border: 4px solid #f1f5f9; border-radius: 25px; padding: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        
+        .color-red { filter: grayscale(100%) sepia(100%) hue-rotate(-50deg) saturate(1000%); }
+        .color-blue { filter: grayscale(100%) sepia(100%) hue-rotate(190deg) saturate(1000%); }
+        .color-green { filter: grayscale(100%) sepia(100%) hue-rotate(80deg) saturate(1000%); }
+
+        .falling-item { position: absolute; font-size: 85px; z-index: 50; cursor: pointer; user-select: none; touch-action: none; }
+
+        #drop-zone { width: 140px; height: 140px; border: 6px dashed #cbd5e1; border-radius: 30px; margin: 20px auto; display: flex; align-items: center; justify-content: center; font-size: 80px; filter: brightness(0) opacity(0.15); background: #f1f5f9; }
+        #drag-target { width: 115px; height: 115px; font-size: 80px; cursor: grab; display: flex; align-items: center; justify-content: center; background: white; border-radius: 25px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); z-index: 100; border: 2px solid #e2e8f0; position: relative; }
+
+        .hidden { display: none; }
+        button { padding: 18px 35px; font-size: 22px; border: none; border-radius: 50px; background: var(--primary); color: white; font-weight: bold; cursor: pointer; box-shadow: 0 6px #0369a1; }
+        #instruction { font-size: 26px; color: #0c4a6e; margin: 10px 0; font-weight: bold; }
+        .sub-tag { font-size: 16px; color: #64748b; margin-bottom: 5px; }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="app-container">
+    <div id="start-screen" class="card">
+        <h1 style="color: var(--primary)">مغامرة النظافة الذكية 🧼</h1>
+        <input type="text" id="child-name" placeholder="اسم الطفل..." style="padding: 15px; width: 85%; border-radius: 15px; border: 3px solid var(--primary); margin-bottom: 20px; font-size: 20px; text-align: center;">
+        <br>
+        <button onclick="startJourney()">ابدأ الاختبار</button>
+    </div>
+
+    <div id="game-screen" class="card hidden">
+        <div class="sub-tag">محاولة: <span id="attempt-num">1</span> من 3</div>
+        <div id="progress-container"><div id="progress-bar"></div></div>
+        <h2 id="instruction">استعد...</h2>
+        <div id="play-zone" style="min-height: 400px; position: relative; width: 100%;"></div>
+    </div>
+
+    <div id="finish-screen" class="card hidden">
+        <h2 style="color: var(--success)">رائع! انتهينا بنجاح 🎉</h2>
+        <p id="final-report" style="font-size: 24px; font-weight: bold;"></p>
+        <button onclick="location.reload()">طفل جديد</button>
+        <div style="margin-top: 30px;">
+            <button onclick="downloadResults()" style="background: #059669; font-size: 16px;">تحميل ملف النتائج (CSV)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let childName = "", currentLvl = 1, attempt = 1, totalLevels = 4;
+    let startTime, levelTimes = [], spawnInterval;
+    let huntStage = 1, caught = 0;
+    const toys = ['🧸', '🚗', '🍕', '⚽', '🍦'];
+
+    function speak(text) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'ar-SA'; msg.rate = 0.9;
+        window.speechSynthesis.speak(msg);
+    }
+
+    function startJourney() {
+        childName = document.getElementById('child-name').value;
+        if(!childName) return alert("اكتب الاسم");
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+        loadLevel();
+    }
+
+    function loadLevel() {
+        clearInterval(spawnInterval);
+        const zone = document.getElementById('play-zone');
+        zone.innerHTML = '';
+        document.getElementById('attempt-num').innerText = attempt;
+        document.getElementById('progress-container').style.display = (currentLvl === 3) ? 'block' : 'none';
+        startTime = Date.now();
+
+        if(currentLvl === 1) level1();
+        else if(currentLvl === 2) level2();
+        else if(currentLvl === 3) level3();
+        else if(currentLvl === 4) level4();
+    }
+
+    // 1. أوجد المختلف (3 محاولات)
+    function level1() {
+        const variants = [ {m:'🪥', o:'🧼', n:'الصَابونة'}, {m:'🧼', o:'🪮', n:'الِمشط'}, {m:'🪮', o:'🧴', n:'الشامبو'} ];
+        const current = variants[attempt-1];
+        const txt = `اضغط على ${current.n} المختلفة`;
+        document.getElementById('instruction').innerText = txt; speak(txt);
+        const grid = document.createElement('div'); grid.className = 'grid';
+        let items = Array(8).fill(current.m); items.push(current.o);
+        items.sort(()=>Math.random()-0.5).forEach(icon => {
+            const btn = document.createElement('div'); btn.className = 'item'; btn.innerText = icon;
+            btn.onclick = () => icon === current.o ? nextStep() : speak("حاول ثانية");
+            grid.appendChild(btn);
+        });
+        document.getElementById('play-zone').appendChild(grid);
+    }
+
+    // 2. الألوان (3 محاولات)
+    function level2() {
+        const colors = [ {c:'blue', n:'الزرقاء'}, {c:'red', n:'الحمراء'}, {c:'green', n:'الخضراء'} ];
+        const current = colors[attempt-1];
+        const txt = `اضغط على الصابونة ${current.n}`;
+        document.getElementById('instruction').innerText = txt; speak(txt);
+        const grid = document.createElement('div'); grid.className = 'grid';
+        ['red', 'blue', 'green'].forEach(cls => {
+            const btn = document.createElement('div'); btn.className = `item color-${cls}`; btn.innerText = '🧼';
+            btn.onclick = () => cls === current.c ? nextStep() : speak("ركز في اللون");
+            grid.appendChild(btn);
+        });
+        document.getElementById('play-zone').appendChild(grid);
+    }
+
+    // 3. الصيد مع المشتتات
+    function level3() {
+        const stages = [ {e:'🧼', n:'صَابون'}, {e:'🪥', n:'فُرشاة أسنان'}, {e:'🪮', n:'مِشط'} ];
+        const current = stages[huntStage-1];
+        const targetCount = 5; caught = 0; updateBar(0);
+        const txt = `اصطد 5 ${current.n}`;
+        document.getElementById('instruction').innerText = txt;
+        document.getElementById('attempt-num').innerText = huntStage;
+        speak(txt);
+
+        spawnInterval = setInterval(() => {
+            if(caught >= targetCount) return;
+            const isTool = Math.random() > 0.6;
+            let emoji = isTool ? current.e : toys[Math.floor(Math.random() * toys.length)];
+            const div = document.createElement('div');
+            div.className = 'falling-item';
+            div.innerText = emoji;
+            div.style.left = (Math.random()*75 + 10) + '%';
+            div.style.top = '-100px';
+            document.getElementById('play-zone').appendChild(div);
+            let pos = -100;
+            const fall = setInterval(() => {
+                pos += 5; div.style.top = pos + 'px';
+                if(pos > 500) { clearInterval(fall); div.remove(); }
+            }, 30);
+            const hit = (e) => {
+                e.preventDefault();
+                if(isTool) {
+                    caught++; updateBar((caught/targetCount)*100); div.remove();
+                    if(caught >= targetCount) {
+                        clearInterval(spawnInterval);
+                        if(huntStage < 3) { huntStage++; setTimeout(level3, 800); }
+                        else { nextStep(); }
+                    }
+                } else speak("تجنب الألعاب");
+            };
+            div.addEventListener('touchstart', hit); div.addEventListener('mousedown', hit);
+        }, 1100);
+    }
+
+    // 4. السحب والإفلات (3 محاولات)
+    function level4() {
+        const items = [ {e:'🪮', n:'المِشط'}, {e:'🧼', n:'الصابونة'}, {e:'🪥', n:'فُرشاة الأسنان'} ];
+        const current = items[attempt-1];
+        const txt = `ضع ${current.n} في مكانها الصحيح`;
+        document.getElementById('instruction').innerText = txt; speak(txt);
+        
+        const zone = document.getElementById('play-zone');
+        zone.innerHTML = `<div id="drop-zone">${current.e}</div><div id="drag-target">${current.e}</div>`;
+        
+        const drag = document.getElementById('drag-target');
+        const drop = document.getElementById('drop-zone');
+
+        const move = (e) => {
+            e.preventDefault();
+            let t = e.touches ? e.touches[0] : e;
+            drag.style.position = 'fixed';
+            drag.style.left = (t.clientX - 55) + 'px';
+            drag.style.top = (t.clientY - 55) + 'px';
+        };
+
+        const end = (e) => {
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('mousemove', move);
+            const rect = drop.getBoundingClientRect();
+            const et = e.changedTouches ? e.changedTouches[0] : e;
+            
+            if (et && et.clientX > rect.left && et.clientX < rect.right && et.clientY > rect.top && et.clientY < rect.bottom) {
+                drag.style.display = 'none'; drop.style.filter = 'none'; drop.style.opacity = '1';
+                setTimeout(nextStep, 800);
+            } else {
+                drag.style.position = 'relative'; drag.style.left='0'; drag.style.top='0';
+            }
+        };
+
+        drag.addEventListener('touchstart', () => document.addEventListener('touchmove', move, {passive:false}));
+        drag.addEventListener('touchend', end);
+        drag.addEventListener('mousedown', () => {
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', end, {once:true});
+        });
+    }
+
+    function updateBar(val) {
+        document.getElementById('progress-bar').style.width = val + '%';
+    }
+
+    function nextStep() {
+        // إدارة المحاولات الثلاث في المستويات 1 و 2 و 4
+        if((currentLvl === 1 || currentLvl === 2 || currentLvl === 4) && attempt < 3) {
+            attempt++;
+            loadLevel();
+        } else {
+            levelTimes.push((Date.now() - startTime) / 1000);
+            if(currentLvl < totalLevels) {
+                currentLvl++; attempt = 1; loadLevel();
+            } else {
+                showResults();
+            }
+        }
+    }
+
+    function showResults() {
+        document.getElementById('game-screen').classList.add('hidden');
+        document.getElementById('finish-screen').classList.remove('hidden');
+        const avg = (levelTimes.reduce((a,b)=>a+b, 0) / totalLevels).toFixed(2);
+        document.getElementById('final-report').innerText = `متوسط سرعة الانتباه: ${avg} ثانية`;
+        let logs = JSON.parse(localStorage.getItem('hygiene_final_v5') || '[]');
+        logs.push({ name: childName, avg: avg, date: new Date().toLocaleDateString() });
+        localStorage.setItem('hygiene_final_v5', JSON.stringify(logs));
+    }
+
+    function downloadResults() {
+        const logs = JSON.parse(localStorage.getItem('hygiene_final_v5') || '[]');
+        let csv = "\ufeffالاسم,المتوسط,التاريخ\n" + logs.map(l => `${l.name},${l.avg},${l.date}`).join("\n");
+        const b = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement("a"); a.href = URL.createObjectURL(b);
+        a.download = "نتائج_انتباه_النظافة_الشاملة.csv"; a.click();
+    }
+</script>
+</body>
+</html>
